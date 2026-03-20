@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OS Performance Dashboard</title>
+  <meta name="description" content="Real-time cross-platform OS performance monitoring dashboard" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css?v=5" />
+</head>
+
+<body>
+  <!-- ───── Header ───── -->
+  <header id="header">
+    <div class="header-left">
+      <h1>⚡ OS Performance Dashboard</h1>
+    </div>
+    <div class="header-right">
+      <span id="status-badge" class="badge badge-normal">Normal</span>
+      <span id="connection-indicator" class="connection offline" title="WebSocket status">●</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- ───── System Info ───── -->
+    <section id="system-info" class="panel">
+      <h2>System Information</h2>
+      <div class="info-grid" id="info-grid">
+        <div class="info-card"><span class="info-label">OS</span><span class="info-value" id="info-os">—</span></div>
+        <div class="info-card"><span class="info-label">CPU</span><span class="info-value" id="info-cpu">—</span></div>
+        <div class="info-card"><span class="info-label">Physical Cores</span><span class="info-value"
+            id="info-pcores">—</span></div>
+        <div class="info-card"><span class="info-label">Logical Threads</span><span class="info-value"
+            id="info-lcores">—</span></div>
+        <div class="info-card"><span class="info-label">Total RAM</span><span class="info-value" id="info-ram">—</span>
+        </div>
+        <div class="info-card"><span class="info-label">Disk Capacity</span><span class="info-value"
+            id="info-disk">—</span></div>
+        <div class="info-card"><span class="info-label">Uptime</span><span class="info-value" id="info-uptime">—</span>
+        </div>
+        <div class="info-card"><span class="info-label">Running Processes</span><span class="info-value"
+            id="info-procs">—</span></div>
+      </div>
+    </section>
+
+    <!-- ───── Charts row ───── -->
+    <div class="charts-row">
+      <!-- CPU Panel -->
+      <section id="cpu-panel" class="panel">
+        <h2>CPU Monitoring</h2>
+        <div class="metric-header">
+          <div class="metric-pill">
+            <span class="metric-label">CPU</span>
+            <span class="metric-value" id="metric-cpu">—%</span>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="cpu-chart"></canvas>
+        </div>
+        <h3>Per-Core Usage</h3>
+        <div id="core-bars" class="core-bars"></div>
+      </section>
+
+      <!-- Memory Panel -->
+      <section id="memory-panel" class="panel">
+        <h2>Memory Monitoring</h2>
+        <div class="metric-header">
+          <div class="metric-pill">
+            <span class="metric-label">Memory</span>
+            <span class="metric-value" id="metric-mem">—%</span>
+          </div>
+          <div class="metric-pill secondary">
+            <span class="metric-label">Mem Pressure</span>
+            <span class="metric-value" id="metric-mem-pressure">—%</span>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="memory-chart"></canvas>
+        </div>
+        <div class="mem-summary" id="mem-summary">
+          <div class="mem-bar-wrapper">
+            <div class="mem-bar" id="mem-bar"></div>
+          </div>
+          <span id="mem-text">— / —</span>
+        </div>
+        <div class="chart-container small-chart">
+          <canvas id="mem-pressure-chart"></canvas>
+        </div>
+      </section>
+    </div>
+
+    <!-- ───── Disk / Network / Load Row ───── -->
+    <div class="charts-row three-cols">
+      <section id="disk-panel" class="panel">
+        <h2>Disk I/O</h2>
+        <div class="metric-header">
+          <div class="metric-pill">
+            <span class="metric-label">Read</span>
+            <span class="metric-value" id="metric-disk-read">0 MB/s</span>
+          </div>
+          <div class="metric-pill secondary">
+            <span class="metric-label">Write</span>
+            <span class="metric-value" id="metric-disk-write">0 MB/s</span>
+          </div>
+        </div>
+        <div class="chart-container small-chart">
+          <canvas id="disk-chart"></canvas>
+        </div>
+      </section>
+
+      <section id="network-panel" class="panel">
+        <h2>Network</h2>
+        <div class="metric-header">
+          <div class="metric-pill">
+            <span class="metric-label">Up</span>
+            <span class="metric-value" id="metric-net-up">0 MB/s</span>
+          </div>
+          <div class="metric-pill secondary">
+            <span class="metric-label">Down</span>
+            <span class="metric-value" id="metric-net-down">0 MB/s</span>
+          </div>
+        </div>
+        <div class="chart-container small-chart">
+          <canvas id="network-chart"></canvas>
+        </div>
+      </section>
+
+      <section id="load-panel" class="panel">
+        <h2>CPU Load Average</h2>
+        <div class="metric-header">
+          <div class="metric-pill">
+            <span class="metric-label">1m</span>
+            <span class="metric-value" id="metric-load-one">—</span>
+          </div>
+          <div class="metric-pill secondary">
+            <span class="metric-label">5m</span>
+            <span class="metric-value" id="metric-load-five">—</span>
+          </div>
+          <div class="metric-pill secondary">
+            <span class="metric-label">15m</span>
+            <span class="metric-value" id="metric-load-fifteen">—</span>
+          </div>
+        </div>
+        <div class="chart-container small-chart">
+          <canvas id="load-chart"></canvas>
+        </div>
+      </section>
+    </div>
+
+    <!-- ───── Control Panel ───── -->
+    <section id="controls" class="panel control-panel">
+      <h2>Control Panel</h2>
+      <div class="control-row">
+        <div class="control-item">
+          <label for="interval-select">Update Interval</label>
+          <select id="interval-select">
+            <option value="1" selected>1 second</option>
+            <option value="2">2 seconds</option>
+            <option value="5">5 seconds</option>
+            <option value="10">10 seconds</option>
+          </select>
+        </div>
+        <div class="control-item">
+          <label for="pause-btn">Graph Mode</label>
+          <button id="pause-btn" class="btn">⏸ Pause</button>
+        </div>
+        <div class="control-item">
+          <label>Process Filter</label>
+          <input type="text" id="process-filter" placeholder="Search processes…" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── Process Table ───── -->
+    <section id="process-section" class="seamless-section">
+      <h2>Process Table</h2>
+      <div class="table-wrapper">
+        <table id="process-table">
+          <thead>
+            <tr>
+              <th data-sort="pid" class="sortable">PID <span class="sort-arrow"></span></th>
+              <th data-sort="name" class="sortable">Process Name <span class="sort-arrow"></span></th>
+              <th data-sort="type" class="sortable">Type <span class="sort-arrow"></span></th>
+              <th data-sort="cpu" class="sortable active desc">CPU % <span class="sort-arrow">▼</span></th>
+              <th data-sort="memory" class="sortable">Memory % <span class="sort-arrow"></span></th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="process-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ───── Kill History Section ───── -->
+    <section id="kill-history-section" class="seamless-section hidden">
+      <h2>Kill History <span id="kill-history-count" class="history-count">(0)</span></h2>
+      <div class="table-wrapper">
+        <table id="kill-history-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>PID</th>
+              <th>Process</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="kill-history-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ───── Kill Confirmation Modal (outside main so it never renders inline) ───── -->
+  <div id="kill-modal-overlay" class="modal-overlay hidden" style="display:none">
+    <div class="modal" id="kill-modal">
+      <div class="modal-icon" id="modal-icon">⚠️</div>
+      <h3 id="modal-title">Terminate Process?</h3>
+      <p id="modal-message"></p>
+      <div class="modal-warning hidden" id="modal-warning" style="display:none">
+        <span class="warning-icon">🛑</span>
+        <span id="modal-warning-text">This is a critical system process. Killing it may crash your desktop session or destabilise your system.</span>
+      </div>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn modal-btn-cancel">Cancel</button>
+        <button id="modal-confirm" class="btn modal-btn-confirm">Terminate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="/static/app.js?v=5"></script>
+</body>
+
+</html>
