@@ -87,6 +87,7 @@ class DashboardState:
     last_disk: dict = field(default_factory=dict)
     last_network: dict = field(default_factory=dict)
     last_load: dict = field(default_factory=dict)
+    last_sync: dict = field(default_factory=dict)
 
     def add_client(self, ws: WebSocket, interval: float = DEFAULT_INTERVAL) -> int:
         """Register a client; returns its session ID."""
@@ -325,6 +326,8 @@ async def _broadcast(payload: dict):
     for result in results:
         if isinstance(result, int):
             state.remove_client(result)
+        elif isinstance(result, Exception):
+            logger.warning("Unexpected broadcast error: %s", result)
 
 
 # ---------------------------------------------------------------------------
@@ -398,12 +401,6 @@ async def _fast_metric_loop():
             logger.exception("CPU stats collection failed")
             cpu_stats = {}
 
-        # --- Sync stats (thread states, D-state, FDs, ctx ratio) ---
-        try:
-            sync = get_sync_stats()
-        except Exception:
-            logger.exception("Sync stats collection failed")
-            sync = {}
 
         # --- Processes (isolated + already throttled in collector) ---
         try:
@@ -419,6 +416,8 @@ async def _fast_metric_loop():
             net_up=net.get("up_mb_s", 0),
             net_down=net.get("down_mb_s", 0),
             load_one=load.get("one", 0),
+            load_five=load.get("five", 0),
+            load_fifteen=load.get("fifteen", 0),
         )
         state.last_cpu = cpu
         state.last_mem = mem["percent"]
@@ -459,7 +458,7 @@ async def _fast_metric_loop():
             "disk": disk,
             "network": net,
             "load": load,
-            "sync": sync,
+            "sync": state.last_sync,
             "history": {
                 "cpu":     state.history.get_cpu_history(),
                 "memory":  state.history.get_memory_history(),
@@ -485,6 +484,10 @@ async def _slow_metric_loop():
             state.system_info["partitions"] = get_disk_partitions()
         except Exception:
             logger.exception("System info collection failed")
+        try:
+            state.last_sync = get_sync_stats()
+        except Exception:
+            logger.exception("Sync stats collection failed")
         state.last_slow_update = time.time()
         await asyncio.sleep(SLOW_METRIC_INTERVAL)
 

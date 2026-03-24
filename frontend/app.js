@@ -310,9 +310,11 @@
         replaySliding(netChart, data.history.network.up,   0);
         replaySliding(netChart, data.history.network.down, 1);
       }
-      // Load — single dataset (1m only for history)
+      // Load — three datasets (1m, 5m, 15m)
       if (data.history.load) {
-        replaySliding(loadChart, data.history.load, 0);
+        replaySliding(loadChart, data.history.load.one, 0);
+        replaySliding(loadChart, data.history.load.five, 1);
+        replaySliding(loadChart, data.history.load.fifteen, 2);
       }
 
       initializedHistory = true;
@@ -719,7 +721,7 @@
           <div class="ts-row">
             <span class="ts-label">${state}</span>
             <div class="ts-track">
-              <div class="ts-fill" style="width:${Math.min(count, 200) / 2}%;
+              <div class="ts-fill" style="width:${sync.total_threads > 0 ? Math.min(count / sync.total_threads * 100, 100) : 0}%;
                 background:${STATE_COLORS[state] || "#8b949e"}"></div>
             </div>
             <span class="ts-count">${count}</span>
@@ -848,6 +850,7 @@
     modalTitle.textContent = "⚠ Critical System Process";
     modalMessage.textContent = `You are about to terminate "${name}" (PID ${pid}).`;
     modalWarning.classList.remove("hidden");
+    modalWarning.style.display = "";
     modalConfirm.classList.add("modal-btn-danger");
     modalConfirm.textContent = "Kill Anyway";
 

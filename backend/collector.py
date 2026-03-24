@@ -402,7 +402,7 @@ def classify_process(name: str, username: Optional[str], nice: Optional[int]) ->
 def get_process_list() -> List[Dict]:
     """
     Return a list of running processes with:
-    - pid, name, cpu, memory, rss, vms, status, threads, fds
+    - pid, name, cpu, memory, rss, status, threads, fds
     - vol_ctx, invol_ctx (per-process context switches)
     - risky (bool), type: "system" | "user" | "background"
 
@@ -428,7 +428,6 @@ def get_process_list() -> List[Dict]:
 
             mem_info = info.get("memory_info")
             rss = mem_info.rss if mem_info else 0
-            vms = mem_info.vms if mem_info else 0
 
             # Voluntary vs non-voluntary context switches (per-process)
             try:
@@ -450,7 +449,6 @@ def get_process_list() -> List[Dict]:
                 "cpu":      round(info.get("cpu_percent") or 0.0, 1),
                 "memory":   round(info.get("memory_percent") or 0.0, 1),
                 "rss":      rss,          # bytes — format in frontend
-                "vms":      vms,          # bytes
                 "status":   info.get("status", "?"),   # running/sleeping/zombie/disk-sleep
                 "threads":  info.get("num_threads", 0),
                 "fds":      fds,
