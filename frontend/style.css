@@ -799,6 +799,301 @@ input[type="text"] {
   color: var(--red);
 }
 
+/* ── Alert Banner (Fix 1) ──────────────────────────────────── */
+
+.alert-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.alert-banner.hidden { display: none; }
+
+.alert-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.alert-chip.warning  { background: rgba(210,153,34,0.15); color: #d29922; border: 1px solid rgba(210,153,34,0.3); }
+.alert-chip.critical { background: rgba(218,54,51,0.15);  color: #f85149; border: 1px solid rgba(218,54,51,0.3); }
+
+/* ── CPU Stats Row (Fix 3) ─────────────────────────────────── */
+
+.stats-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-width: 120px;
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Process State Badge (Fix 4) ───────────────────────────── */
+
+.proc-state { font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+.state-zombie  { background: rgba(248,81,73,0.15); color: #f85149; }
+.state-dstate  { background: rgba(210,153,34,0.15); color: #d29922; }
+
+/* ── Sync & Deadlocks Panel (Fix 5) ────────────────────────── */
+
+.sync-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sync-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.3s;
+}
+
+.sync-card.danger {
+  border-color: var(--red);
+  box-shadow: 0 0 12px rgba(248, 81, 73, 0.2);
+}
+
+.sync-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+}
+
+.sync-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.thread-state-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ts-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.ts-label {
+  width: 80px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.ts-track {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ts-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.ts-count {
+  width: 40px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.dstate-list {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.dstate-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(248,81,73,0.1);
+  border: 1px solid rgba(248,81,73,0.3);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--red);
+}
+
+.dstate-chip em {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.no-dstate {
+  color: var(--green);
+  font-size: 14px;
+}
+
+.hint {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ── Partition List (Fix 6) ────────────────────────────────── */
+
+.partition-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.partition-row {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.part-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.part-mount {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.part-type {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.part-pct {
+  margin-left: auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--green);
+}
+
+.part-pct.warn { color: var(--yellow); }
+.part-pct.danger { color: var(--red); }
+
+.part-bar-track {
+  height: 6px;
+  background: var(--bg-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.part-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--chart-mem));
+  transition: width 0.6s ease;
+}
+
+.inode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.inode-label {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.inode-val {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.inode-val.danger { color: var(--red); }
+
+/* ── Memory Detail Row (Fix 7) ─────────────────────────────── */
+
+.mem-detail-row {
+  display: grid;
+  grid-template-columns: repeat(4, auto auto);
+  gap: 6px 14px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  align-items: center;
+}
+
+.mem-detail-row > span:nth-child(odd) {
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+}
+
+.mem-detail-row > span:nth-child(even) {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Responsive ─────────────────────────────────────────────── */
 
 @media (max-width: 900px) {

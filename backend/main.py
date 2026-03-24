@@ -33,6 +33,9 @@ from .collector import (
     get_disk_io_rates,
     get_network_io_rates,
     get_load_average,
+    get_cpu_stat_rates,
+    get_sync_stats,
+    get_disk_partitions,
 )
 from .history import MetricHistory
 from .processor import format_bytes
@@ -388,6 +391,20 @@ async def _fast_metric_loop():
         state.last_network = net
         state.last_load = load
 
+        # --- CPU stats (context switches, interrupts) ---
+        try:
+            cpu_stats = get_cpu_stat_rates()
+        except Exception:
+            logger.exception("CPU stats collection failed")
+            cpu_stats = {}
+
+        # --- Sync stats (thread states, D-state, FDs, ctx ratio) ---
+        try:
+            sync = get_sync_stats()
+        except Exception:
+            logger.exception("Sync stats collection failed")
+            sync = {}
+
         # --- Processes (isolated + already throttled in collector) ---
         try:
             procs = get_process_list()
@@ -395,7 +412,14 @@ async def _fast_metric_loop():
             logger.exception("Process collection failed")
             procs = []
 
-        state.history.add(cpu, mem["percent"])
+        state.history.add(
+            cpu, mem["percent"],
+            disk_read=disk.get("read_mb_s", 0),
+            disk_write=disk.get("write_mb_s", 0),
+            net_up=net.get("up_mb_s", 0),
+            net_down=net.get("down_mb_s", 0),
+            load_one=load.get("one", 0),
+        )
         state.last_cpu = cpu
         state.last_mem = mem["percent"]
         state.last_proc_count = len(procs)
@@ -413,6 +437,11 @@ async def _fast_metric_loop():
             "cpu": {
                 "overall": cpu,
                 "per_core": per_core,
+                "ctx_switches_per_sec": cpu_stats.get("ctx_switches_per_sec", 0),
+                "interrupts_per_sec":   cpu_stats.get("interrupts_per_sec", 0),
+                "user_time":   cpu_stats.get("user_time", 0),
+                "system_time": cpu_stats.get("system_time", 0),
+                "iowait":      cpu_stats.get("iowait", 0),
             },
             "memory": {
                 "percent": mem["percent"],
@@ -422,13 +451,21 @@ async def _fast_metric_loop():
                 "swap_used": format_bytes(mem["swap_used"]),
                 "swap_total": format_bytes(mem["swap_total"]),
                 "swap_percent": mem["swap_percent"],
+                "buffers": mem.get("buffers", 0),
+                "cached": mem.get("cached", 0),
+                "swap_in_rate": mem.get("swap_in_rate", 0),
+                "swap_out_rate": mem.get("swap_out_rate", 0),
             },
             "disk": disk,
             "network": net,
             "load": load,
+            "sync": sync,
             "history": {
-                "cpu": state.history.get_cpu_history(),
-                "memory": state.history.get_memory_history(),
+                "cpu":     state.history.get_cpu_history(),
+                "memory":  state.history.get_memory_history(),
+                "disk":    state.history.get_disk_history(),
+                "network": state.history.get_network_history(),
+                "load":    state.history.get_load_history(),
             },
             "processes": sorted(procs, key=lambda p: p["cpu"], reverse=True)[:200],
             "system_info": state.system_info,  # from slow loop
@@ -445,6 +482,7 @@ async def _slow_metric_loop():
     while True:
         try:
             state.system_info = get_system_info()
+            state.system_info["partitions"] = get_disk_partitions()
         except Exception:
             logger.exception("System info collection failed")
         state.last_slow_update = time.time()

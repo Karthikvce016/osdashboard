@@ -23,6 +23,9 @@
     </div>
   </header>
 
+  <!-- Alert banner — hidden when no alerts -->
+  <div id="alert-banner" class="alert-banner hidden"></div>
+
   <main>
     <!-- ───── System Info ───── -->
     <section id="system-info" class="panel">
@@ -61,6 +64,20 @@
         </div>
         <h3>Per-Core Usage</h3>
         <div id="core-bars" class="core-bars"></div>
+        <div class="stats-row">
+          <div class="stat-item">
+            <span class="stat-label">Ctx switches/s</span>
+            <span class="stat-value" id="stat-ctx">—</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Interrupts/s</span>
+            <span class="stat-value" id="stat-irq">—</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">I/O wait</span>
+            <span class="stat-value" id="stat-iowait">—</span>
+          </div>
+        </div>
       </section>
 
       <!-- Memory Panel -->
@@ -88,6 +105,12 @@
         <div class="chart-container small-chart">
           <canvas id="mem-pressure-chart"></canvas>
         </div>
+        <div class="mem-detail-row">
+          <span>Buffers</span><span id="mem-buffers">—</span>
+          <span>Cached</span><span id="mem-cached">—</span>
+          <span>Swap in/s</span><span id="mem-swapin">—</span>
+          <span>Swap out/s</span><span id="mem-swapout">—</span>
+        </div>
       </section>
     </div>
 
@@ -108,6 +131,8 @@
         <div class="chart-container small-chart">
           <canvas id="disk-chart"></canvas>
         </div>
+        <h3>Partitions</h3>
+        <div id="partition-list" class="partition-list"></div>
       </section>
 
       <section id="network-panel" class="panel">
@@ -185,6 +210,9 @@
               <th data-sort="type" class="sortable">Type <span class="sort-arrow"></span></th>
               <th data-sort="cpu" class="sortable active desc">CPU % <span class="sort-arrow">▼</span></th>
               <th data-sort="memory" class="sortable">Memory % <span class="sort-arrow"></span></th>
+              <th>RSS</th>
+              <th>State</th>
+              <th data-sort="threads" class="sortable">Threads <span class="sort-arrow"></span></th>
               <th>Action</th>
             </tr>
           </thead>
@@ -212,6 +240,39 @@
     </section>
 
   </main>
+
+    <!-- ───── Sync & Deadlocks Panel ───── -->
+    <section id="sync-panel" class="panel" style="margin: 0 24px var(--gap);">
+      <h2>Sync &amp; Deadlocks</h2>
+      <div class="sync-grid">
+        <div class="sync-card">
+          <span class="sync-label">Total Threads</span>
+          <span class="sync-value" id="sync-total-threads">—</span>
+        </div>
+        <div class="sync-card">
+          <span class="sync-label">Open FDs</span>
+          <span class="sync-value" id="sync-fds">—</span>
+        </div>
+        <div class="sync-card">
+          <span class="sync-label">FD Limit</span>
+          <span class="sync-value" id="sync-fd-limit">—</span>
+        </div>
+        <div class="sync-card warn" id="sync-dstate-card">
+          <span class="sync-label">D-State Procs</span>
+          <span class="sync-value" id="sync-dstate">0</span>
+        </div>
+        <div class="sync-card">
+          <span class="sync-label">Involuntary Ctx%</span>
+          <span class="sync-value" id="sync-invol-ctx">—</span>
+        </div>
+      </div>
+
+      <h3>Thread States</h3>
+      <div id="thread-state-bars" class="thread-state-bars"></div>
+
+      <h3>D-State Processes <span class="hint">(blocked, uninterruptible)</span></h3>
+      <div id="dstate-list" class="dstate-list">—</div>
+    </section>
 
   <!-- ───── Kill Confirmation Modal (outside main so it never renders inline) ───── -->
   <div id="kill-modal-overlay" class="modal-overlay hidden" style="display:none">

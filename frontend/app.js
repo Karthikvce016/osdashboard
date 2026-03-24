@@ -35,6 +35,7 @@
   const coreBarsContainer = $("core-bars");
   const memBar = $("mem-bar");
   const memText = $("mem-text");
+  const alertBanner = $("alert-banner");
 
   const metricCpu = $("metric-cpu");
   const metricMem = $("metric-mem");
@@ -213,7 +214,22 @@
         },
       ],
     },
-    options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0, suggestedMax: 10, max: undefined } } },
+    options: {
+      ...chartDefaults,
+      scales: {
+        ...chartDefaults.scales,
+        y: {
+          ...chartDefaults.scales.y,
+          min: 0,
+          suggestedMax: 10,
+          max: undefined,
+          ticks: {
+            ...chartDefaults.scales.y.ticks,
+            callback: (v) => v.toFixed(1),
+          },
+        },
+      },
+    },
   });
 
   // ── WebSocket ─────────────────────────────────────────────
@@ -273,23 +289,38 @@
 
   function handleUpdate(data) {
     if (!initializedHistory && data.history) {
-      if (data.history.cpu && data.history.cpu.length) {
-        let cpuData = data.history.cpu.slice(-HISTORY_POINTS);
-        while (cpuData.length < HISTORY_POINTS) cpuData.unshift(null);
-        cpuChart.data.datasets[0].data = cpuData;
-        cpuChart.update();
+      const replaySliding = (chart, series, datasetIdx = 0) => {
+        if (!series || !series.length) return;
+        let d = series.slice(-HISTORY_POINTS);
+        while (d.length < HISTORY_POINTS) d.unshift(null);
+        chart.data.datasets[datasetIdx].data = d;
+        chart.update();
+      };
+
+      replaySliding(cpuChart,  data.history.cpu);
+      replaySliding(memChart,  data.history.memory);
+
+      // Disk — two datasets (read + write)
+      if (data.history.disk) {
+        replaySliding(diskChart, data.history.disk.read,  0);
+        replaySliding(diskChart, data.history.disk.write, 1);
       }
-      if (data.history.memory && data.history.memory.length) {
-        let memData = data.history.memory.slice(-HISTORY_POINTS);
-        while (memData.length < HISTORY_POINTS) memData.unshift(null);
-        memChart.data.datasets[0].data = memData;
-        memChart.update();
+      // Network — two datasets (up + down)
+      if (data.history.network) {
+        replaySliding(netChart, data.history.network.up,   0);
+        replaySliding(netChart, data.history.network.down, 1);
       }
+      // Load — single dataset (1m only for history)
+      if (data.history.load) {
+        replaySliding(loadChart, data.history.load, 0);
+      }
+
       initializedHistory = true;
     }
 
     // Always update status badge and alerts (critical should show even when paused)
     updateStatusBadge(data.status, data.alerts || []);
+    renderAlerts(data.alerts || []);
 
     // Store latest processes regardless (so unpausing shows fresh data)
     latestProcesses = data.processes || [];
@@ -298,6 +329,7 @@
 
     updateSystemInfo(data.system_info);
     updateCpuChart(data.cpu, data.history);
+    updateCpuStats(data.cpu);
     updateMemChart(data.memory, data.history);
     updateMemPressureChart(data.memory);
     updateDiskChart(data.disk);
@@ -305,6 +337,8 @@
     updateLoadChart(data.load);
     updateCoreBars(data.cpu.per_core);
     updateMemSummary(data.memory);
+    updateSyncPanel(data.sync);
+    updatePartitions(data.system_info?.partitions);
     renderProcessTable();
   }
 
@@ -337,6 +371,38 @@
     const hasWarning = (alerts || []).some((a) => a.level === "warning");
     if (hasCritical) header.classList.add("header-stress-critical");
     else if (hasWarning) header.classList.add("header-stress-high");
+  }
+
+  // ── Alert rendering (Fix 1) ────────────────────────────────
+
+  const SOURCE_ICONS = {
+    cpu: "🖥", memory: "🧠", disk: "💾", network: "🌐", load: "📈"
+  };
+
+  function renderAlerts(alerts) {
+    if (!alerts || alerts.length === 0) {
+      alertBanner.classList.add("hidden");
+      alertBanner.innerHTML = "";
+      return;
+    }
+    alertBanner.classList.remove("hidden");
+    alertBanner.innerHTML = alerts
+      .map(a => {
+        const icon = SOURCE_ICONS[a.source] || "⚠";
+        return `<span class="alert-chip ${a.level}">${icon} ${a.message}</span>`;
+      })
+      .join("");
+  }
+
+  // ── CPU Stats (Fix 3) ──────────────────────────────────────
+
+  function updateCpuStats(cpu) {
+    const ctx  = $("stat-ctx");
+    const irq  = $("stat-irq");
+    const wait = $("stat-iowait");
+    if (ctx)  ctx.textContent  = (cpu.ctx_switches_per_sec || 0).toLocaleString() + "/s";
+    if (irq)  irq.textContent  = (cpu.interrupts_per_sec   || 0).toLocaleString() + "/s";
+    if (wait) wait.textContent = (cpu.iowait || 0).toFixed(1) + "%";
   }
 
   // ── Charts ────────────────────────────────────────────────
@@ -452,6 +518,12 @@
       metricLoadFive.textContent = `${(latestPayload.load.five || 0).toFixed(2)}`;
       metricLoadFifteen.textContent = `${(latestPayload.load.fifteen || 0).toFixed(2)}`;
     }
+
+    // Memory detail (Fix 7)
+    if ($("mem-buffers")) $("mem-buffers").textContent = formatBytes(mem.buffers || 0);
+    if ($("mem-cached"))  $("mem-cached").textContent  = formatBytes(mem.cached  || 0);
+    if ($("mem-swapin"))  $("mem-swapin").textContent  = (mem.swap_in_rate  || 0).toFixed(1) + " pg/s";
+    if ($("mem-swapout")) $("mem-swapout").textContent = (mem.swap_out_rate || 0).toFixed(1) + " pg/s";
   }
 
   // ── Process table (diff-based) ───────────────────────────
@@ -474,12 +546,18 @@
     tr.className = _rowClass(p.cpu);
     const riskyClass = p.risky ? "kill-btn--risky" : "";
     const riskyAttr = p.risky ? 'data-risky="1"' : '';
+    const rssStr     = formatBytes(p.rss || 0);
+    const stateClass = p.status === "zombie" ? "state-zombie"
+                     : p.status === "disk-sleep" ? "state-dstate" : "";
     tr.innerHTML = `
       <td>${p.pid}</td>
       <td>${escapeHtml(p.name)}${p.risky ? ' <span class="risky-badge">🔴 sys</span>' : ''}</td>
       <td class="proc-type">${p.type || "user"}</td>
       <td class="cpu-cell">${p.cpu.toFixed(1)}</td>
       <td class="mem-cell">${p.memory.toFixed(1)}</td>
+      <td>${rssStr}</td>
+      <td><span class="proc-state ${stateClass}">${p.status || "?"}</span></td>
+      <td>${p.threads || 0}</td>
       <td><button class="kill-btn ${riskyClass}" data-pid="${p.pid}" data-name="${escapeHtml(p.name)}" ${riskyAttr}>Kill</button></td>`;
     return tr;
   }
@@ -506,6 +584,20 @@
 
     const memStr = p.memory.toFixed(1);
     if (cells[4].textContent !== memStr) cells[4].textContent = memStr;
+
+    // RSS
+    const rssStr = formatBytes(p.rss || 0);
+    if (cells[5].textContent !== rssStr) cells[5].textContent = rssStr;
+
+    // State
+    const stateClass = p.status === "zombie" ? "state-zombie"
+                     : p.status === "disk-sleep" ? "state-dstate" : "";
+    const stateHtml = `<span class="proc-state ${stateClass}">${p.status || "?"}</span>`;
+    if (cells[6].innerHTML !== stateHtml) cells[6].innerHTML = stateHtml;
+
+    // Threads
+    const threadStr = String(p.threads || 0);
+    if (cells[7].textContent !== threadStr) cells[7].textContent = threadStr;
   }
 
   /**
@@ -585,6 +677,90 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  // Utility — format bytes to human readable (Fix 4)
+  function formatBytes(b) {
+    const units = ["B","KB","MB","GB","TB"];
+    let i = 0;
+    while (b >= 1024 && i < units.length - 1) { b /= 1024; i++; }
+    return b.toFixed(1) + " " + units[i];
+  }
+
+  // ── Sync & Deadlocks panel (Fix 5) ────────────────────────
+
+  function updateSyncPanel(sync) {
+    if (!sync) return;
+
+    $("sync-total-threads").textContent = sync.total_threads ?? "—";
+    $("sync-fds").textContent           = sync.total_fds ?? "—";
+    $("sync-fd-limit").textContent      = sync.fd_limit > 0 ? sync.fd_limit : "N/A";
+    $("sync-dstate").textContent        = sync.d_state_count ?? 0;
+    $("sync-invol-ctx").textContent     = (sync.invol_ctx_ratio ?? 0).toFixed(1) + "%";
+
+    // Highlight D-state card red if any processes are stuck
+    const dcard = $("sync-dstate-card");
+    if (dcard) {
+      dcard.classList.toggle("danger", (sync.d_state_count || 0) > 0);
+    }
+
+    // Thread state bars
+    const states = sync.thread_states || {};
+    const STATE_COLORS = {
+      running: "#3fb950", sleeping: "#58a6ff",
+      "disk-sleep": "#f85149", zombie: "#ff7b72",
+      stopped: "#d29922", other: "#8b949e"
+    };
+    const container = $("thread-state-bars");
+    if (container) {
+      container.innerHTML = Object.entries(states)
+        .filter(([, v]) => v > 0)
+        .map(([state, count]) => `
+          <div class="ts-row">
+            <span class="ts-label">${state}</span>
+            <div class="ts-track">
+              <div class="ts-fill" style="width:${Math.min(count, 200) / 2}%;
+                background:${STATE_COLORS[state] || "#8b949e"}"></div>
+            </div>
+            <span class="ts-count">${count}</span>
+          </div>`).join("");
+    }
+
+    // D-state process list
+    const dlist = $("dstate-list");
+    if (dlist) {
+      const procs = sync.d_state_procs || [];
+      dlist.innerHTML = procs.length === 0
+        ? '<span class="no-dstate">None — system looks healthy</span>'
+        : procs.map(p =>
+            `<span class="dstate-chip">${escapeHtml(p.name)} <em>(${p.pid})</em></span>`
+          ).join("");
+    }
+  }
+
+  // ── Partitions (Fix 6) ────────────────────────────────────
+
+  function updatePartitions(partitions) {
+    const container = $("partition-list");
+    if (!container || !partitions) return;
+    container.innerHTML = partitions.map(p => `
+      <div class="partition-row">
+        <div class="part-header">
+          <span class="part-mount">${p.mountpoint}</span>
+          <span class="part-type">${p.fstype}</span>
+          <span class="part-pct ${p.percent > 90 ? "danger" : p.percent > 75 ? "warn" : ""}">
+            ${p.percent.toFixed(1)}%
+          </span>
+        </div>
+        <div class="part-bar-track">
+          <div class="part-bar-fill" style="width:${p.percent}%"></div>
+        </div>
+        ${p.inodes_total > 0 ? `
+          <div class="inode-row">
+            <span class="inode-label">Inodes</span>
+            <span class="inode-val ${p.inodes_pct > 80 ? "danger" : ""}">${p.inodes_pct.toFixed(1)}%</span>
+          </div>` : ""}
+      </div>`).join("");
   }
 
   // ── Sort header clicks ───────────────────────────────────
