@@ -36,6 +36,9 @@ from .collector import (
     get_cpu_stat_rates,
     get_sync_stats,
     get_disk_partitions,
+    get_process_tree,
+    get_process_detail,
+    compute_health_score,
 )
 from .history import MetricHistory
 from .processor import format_bytes
@@ -237,6 +240,31 @@ async def kill_process(pid: int, request: Request):
         return JSONResponse({"status": "error", "message": str(exc)}, status_code=500)
 
 
+@app.get("/process/{pid}")
+async def process_detail(pid: int):
+    """Return deep-dive OS-level info for a single process.
+
+    Covers: page faults, open files, sockets, context switches,
+    threads, CPU affinity, nice value — all core OS concepts.
+    """
+    loop = asyncio.get_event_loop()
+    detail = await loop.run_in_executor(None, get_process_detail, pid)
+    if detail is None:
+        return JSONResponse({"error": f"Process {pid} not found"}, status_code=404)
+    return JSONResponse(detail)
+
+
+@app.get("/process-tree")
+async def process_tree(compact: bool = True):
+    """Return the process hierarchy (parent-child tree).
+    ?compact=true (default): hides idle system leaf processes.
+    ?compact=false: shows everything."""
+    loop = asyncio.get_event_loop()
+    from functools import partial
+    tree = await loop.run_in_executor(None, partial(get_process_tree, compact=compact))
+    return JSONResponse(tree)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -423,6 +451,9 @@ async def _fast_metric_loop():
         state.last_mem = mem["percent"]
         state.last_proc_count = len(procs)
 
+        # Count zombies for health score
+        zombie_count = sum(1 for p in procs if p.get("status") == "zombie")
+
         alerts = _build_alerts(
             cpu=cpu,
             mem_pct=mem["percent"],
@@ -430,6 +461,17 @@ async def _fast_metric_loop():
             disk=disk,
             net=net,
             load=load,
+        )
+
+        # Compute weighted health score
+        health = compute_health_score(
+            cpu=cpu,
+            mem_pressure=mem.get("pressure", mem["percent"]),
+            swap_in_rate=mem.get("swap_in_rate", 0),
+            swap_out_rate=mem.get("swap_out_rate", 0),
+            d_state_count=state.last_sync.get("d_state_count", 0) if state.last_sync else 0,
+            load_one=load.get("one", 0),
+            zombie_count=zombie_count,
         )
 
         payload = {
@@ -459,6 +501,7 @@ async def _fast_metric_loop():
             "network": net,
             "load": load,
             "sync": state.last_sync,
+            "health": health,
             "history": {
                 "cpu":     state.history.get_cpu_history(),
                 "memory":  state.history.get_memory_history(),
@@ -470,6 +513,7 @@ async def _fast_metric_loop():
             "system_info": state.system_info,  # from slow loop
             "status": _compute_status(cpu, mem["percent"]),
             "alerts": alerts,
+            "zombie_count": zombie_count,
         }
 
         await _broadcast(payload)

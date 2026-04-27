@@ -341,6 +341,8 @@
     updateMemSummary(data.memory);
     updateSyncPanel(data.sync);
     updatePartitions(data.system_info?.partitions);
+    updateHealthGauge(data.health);
+    updateHealthBreakdown(data.health);
     renderProcessTable();
   }
 
@@ -696,7 +698,12 @@
 
     $("sync-total-threads").textContent = sync.total_threads ?? "—";
     $("sync-fds").textContent           = sync.total_fds ?? "—";
-    $("sync-fd-limit").textContent      = sync.fd_limit > 0 ? sync.fd_limit : "N/A";
+    
+    let fdLimitText = "N/A";
+    if (sync.fd_limit > 0) {
+      fdLimitText = sync.fd_limit > 1000000000 ? "Unlimited" : sync.fd_limit.toLocaleString();
+    }
+    $("sync-fd-limit").textContent = fdLimitText;
     $("sync-dstate").textContent        = sync.d_state_count ?? 0;
     $("sync-invol-ctx").textContent     = (sync.invol_ctx_ratio ?? 0).toFixed(1) + "%";
 
@@ -919,6 +926,301 @@
         addKillEntry(pid, name, false, err.message);
       }
     }
+  });
+
+  // ── Health Score Gauge ────────────────────────────────────
+
+  function updateHealthGauge(health) {
+    if (!health) return;
+    const ringFill = $("health-ring-fill");
+    const scoreText = $("health-score-text");
+    const gradeEl = $("health-grade");
+
+    if (!ringFill || !scoreText || !gradeEl) return;
+
+    const score = health.score ?? 0;
+    ringFill.setAttribute("stroke-dasharray", `${score}, 100`);
+
+    // Color based on level
+    ringFill.classList.remove("warning", "critical");
+    gradeEl.classList.remove("warning", "critical");
+    if (health.level === "critical") {
+      ringFill.classList.add("critical");
+      gradeEl.classList.add("critical");
+    } else if (health.level === "warning") {
+      ringFill.classList.add("warning");
+      gradeEl.classList.add("warning");
+    }
+
+    scoreText.textContent = Math.round(score);
+    gradeEl.textContent = health.grade || "—";
+  }
+
+  // ── Health Breakdown ─────────────────────────────────────
+
+  function updateHealthBreakdown(health) {
+    if (!health || !health.breakdown) return;
+    const bd = health.breakdown;
+
+    const items = ["cpu", "memory", "swap", "dstate", "load", "zombie"];
+    items.forEach(key => {
+      const bar = $(`hb-${key}`);
+      const val = $(`hb-${key}-val`);
+      if (!bar || !val) return;
+
+      const penalty = bd[key] ?? 0;
+      bar.style.width = `${Math.min(penalty, 100)}%`;
+      bar.classList.remove("warn", "danger");
+      if (penalty > 60) bar.classList.add("danger");
+      else if (penalty > 30) bar.classList.add("warn");
+      val.textContent = Math.round(penalty);
+    });
+  }
+
+  // ── Process Tree View ───────────────────────────────────
+
+  let treeViewActive = false;
+  let treeData = [];
+  let treeLoading = false;
+  let treeCompact = true;       // default: hide idle system leaf processes
+
+  const viewFlatBtn = $("view-flat-btn");
+  const viewTreeBtn = $("view-tree-btn");
+  const flatView = $("flat-view");
+  const treeView = $("tree-view");
+  const treeTbody = $("tree-tbody");
+  const treeShowAll = $("tree-show-all");
+  const treeCount = $("tree-count");
+
+  if (viewFlatBtn) {
+    viewFlatBtn.addEventListener("click", () => {
+      treeViewActive = false;
+      viewFlatBtn.classList.add("active");
+      viewTreeBtn.classList.remove("active");
+      flatView.classList.remove("hidden");
+      treeView.classList.add("hidden");
+    });
+  }
+
+  if (viewTreeBtn) {
+    viewTreeBtn.addEventListener("click", async () => {
+      treeViewActive = true;
+      viewTreeBtn.classList.add("active");
+      viewFlatBtn.classList.remove("active");
+      flatView.classList.add("hidden");
+      treeView.classList.remove("hidden");
+      await fetchAndRenderTree();
+    });
+  }
+
+  // "Show All" toggle
+  if (treeShowAll) {
+    treeShowAll.addEventListener("change", async () => {
+      treeCompact = !treeShowAll.checked;
+      await fetchAndRenderTree();
+    });
+  }
+
+  async function fetchAndRenderTree() {
+    if (treeLoading) return;
+    treeLoading = true;
+    try {
+      const res = await fetch(`/process-tree?compact=${treeCompact}`);
+      treeData = await res.json();
+      renderTree();
+    } catch (err) {
+      console.error("Failed to fetch process tree:", err);
+    } finally {
+      treeLoading = false;
+    }
+  }
+
+  function renderTree() {
+    if (!treeTbody) return;
+    if (!treeData || !treeData.length) {
+      treeTbody.innerHTML = '<tr><td colspan="8" style="text-align:center;opacity:.5">Loading process tree…</td></tr>';
+      return;
+    }
+
+    // Update count
+    if (treeCount) {
+      treeCount.textContent = `${treeData.length} processes`;
+    }
+
+    const visible = treeData.slice(0, 500);
+    treeTbody.innerHTML = visible.map(p => {
+      // Build visual tree connectors
+      const connector = p.depth > 0
+        ? "│  ".repeat(p.depth - 1) + "├─ "
+        : "";
+      // Icon: folder for branch nodes, file for leaf nodes
+      const icon = p.children_count > 0 ? "📂 " : "📄 ";
+
+      const stateClass = p.status === "zombie" ? "state-zombie"
+                       : p.status === "disk-sleep" ? "state-dstate" : "";
+      const rowClass = p.is_user ? "tree-row-user" : "tree-row-system";
+      const userBadge = p.is_user
+        ? `<span class="user-badge user">${escapeHtml(p.username)}</span>`
+        : `<span class="user-badge system">${escapeHtml(p.username || "root")}</span>`;
+
+      return `<tr data-pid="${p.pid}" class="${rowClass}">
+        <td>${p.pid}</td>
+        <td class="tree-name-cell">
+          <span class="tree-indent">${connector}</span>${icon}<span class="tree-name">${escapeHtml(p.name)}</span>
+        </td>
+        <td>${userBadge}</td>
+        <td>${p.cpu.toFixed(1)}</td>
+        <td>${p.memory.toFixed(1)}</td>
+        <td><span class="proc-state ${stateClass}">${p.status}</span></td>
+        <td>${p.threads}</td>
+        <td>${p.children_count > 0 ? `<span class="children-badge">${p.children_count}</span>` : "—"}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  // Auto-refresh tree every 5s if tree view is active
+  setInterval(() => {
+    if (treeViewActive && !paused) fetchAndRenderTree();
+  }, 5000);
+
+  // Click on tree row → open detail modal
+  if (treeTbody) {
+    treeTbody.addEventListener("click", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      const pid = parseInt(tr.dataset.pid, 10);
+      if (pid) openDetailModal(pid);
+    });
+  }
+
+  // ── Process Detail Modal ────────────────────────────────
+
+  const detailOverlay = $("detail-modal-overlay");
+  const detailBody = $("detail-body");
+  const detailTitle = $("detail-title");
+  const detailClose = $("detail-close");
+
+  function openDetailModal(pid) {
+    detailBody.innerHTML = '<div class="detail-loading">Loading process info…</div>';
+    detailTitle.textContent = `Process Detail — PID ${pid}`;
+
+    detailOverlay.style.display = "";
+    detailOverlay.classList.remove("hidden");
+    requestAnimationFrame(() => detailOverlay.classList.add("visible"));
+
+    fetch(`/process/${pid}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          detailBody.innerHTML = `<div class="detail-loading">${escapeHtml(data.error)}</div>`;
+          return;
+        }
+        renderDetailModal(data);
+      })
+      .catch(err => {
+        detailBody.innerHTML = `<div class="detail-loading">Error: ${escapeHtml(err.message)}</div>`;
+      });
+  }
+
+  function hideDetailModal() {
+    detailOverlay.classList.remove("visible");
+    setTimeout(() => {
+      detailOverlay.classList.add("hidden");
+      detailOverlay.style.display = "none";
+    }, 250);
+  }
+
+  if (detailClose) detailClose.addEventListener("click", hideDetailModal);
+  if (detailOverlay) detailOverlay.addEventListener("click", (e) => {
+    if (e.target === detailOverlay) hideDetailModal();
+  });
+
+  function renderDetailModal(d) {
+    const pf = d.page_faults || {};
+    const ctx = d.ctx_switches || {};
+    const created = d.create_time ? new Date(d.create_time * 1000).toLocaleString() : "—";
+
+    let html = `
+      <div class="detail-grid">
+        <div class="detail-card"><span class="detail-card-label">PID</span><span class="detail-card-value">${d.pid}</span></div>
+        <div class="detail-card"><span class="detail-card-label">PPID</span><span class="detail-card-value">${d.ppid || "—"}</span></div>
+        <div class="detail-card"><span class="detail-card-label">User</span><span class="detail-card-value">${escapeHtml(d.username || "?")}</span></div>
+        <div class="detail-card"><span class="detail-card-label">State</span><span class="detail-card-value">${d.status}</span></div>
+        <div class="detail-card"><span class="detail-card-label">CPU %</span><span class="detail-card-value">${d.cpu}%</span></div>
+        <div class="detail-card"><span class="detail-card-label">Memory %</span><span class="detail-card-value">${d.memory}%</span></div>
+        <div class="detail-card"><span class="detail-card-label">Nice (Priority)</span><span class="detail-card-value">${d.nice ?? "N/A"}</span></div>
+        <div class="detail-card"><span class="detail-card-label">Created</span><span class="detail-card-value" style="font-size:12px">${created}</span></div>
+      </div>
+    `;
+
+    // Page Faults & Memory
+    html += `<div class="detail-section-title">🧠 Virtual Memory & Page Faults</div>
+      <div class="detail-grid">
+        <div class="detail-card"><span class="detail-card-label">RSS (Physical)</span><span class="detail-card-value">${formatBytes(pf.rss || 0)}</span></div>
+        <div class="detail-card"><span class="detail-card-label">VMS (Virtual)</span><span class="detail-card-value">${formatBytes(pf.vms || 0)}</span></div>
+        ${pf.total_faults !== undefined ? `<div class="detail-card"><span class="detail-card-label">Total Page Faults</span><span class="detail-card-value">${pf.total_faults.toLocaleString()}</span></div>` : ""}
+        ${pf.major_faults !== undefined ? `<div class="detail-card"><span class="detail-card-label">Major Faults (Disk)</span><span class="detail-card-value">${pf.major_faults.toLocaleString()}</span></div>` : ""}
+      </div>`;
+
+    // Context Switches
+    html += `<div class="detail-section-title">🔄 Context Switches (CPU Scheduling)</div>
+      <div class="detail-grid">
+        <div class="detail-card"><span class="detail-card-label">Voluntary</span><span class="detail-card-value">${(ctx.voluntary || 0).toLocaleString()}</span></div>
+        <div class="detail-card"><span class="detail-card-label">Involuntary</span><span class="detail-card-value">${(ctx.involuntary || 0).toLocaleString()}</span></div>
+      </div>`;
+
+    // CPU Affinity
+    if (d.cpu_affinity) {
+      html += `<div class="detail-section-title">🖥️ CPU Affinity</div>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">Cores allowed: <strong>${d.cpu_affinity.join(", ")}</strong></p>`;
+    }
+
+    // Threads
+    html += `<div class="detail-section-title">🧵 Threads (${d.num_threads || d.threads?.length || 0})</div>`;
+    if (d.threads && d.threads.length > 0) {
+      html += `<table class="detail-table"><thead><tr><th>Thread ID</th><th>User Time (s)</th><th>System Time (s)</th></tr></thead><tbody>`;
+      d.threads.forEach(t => {
+        html += `<tr><td>${t.id}</td><td>${t.user_time}</td><td>${t.system_time}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    } else {
+      html += `<div class="detail-empty">No thread info available</div>`;
+    }
+
+    // Open Files
+    html += `<div class="detail-section-title">📁 Open Files (FDs: ${d.num_fds >= 0 ? d.num_fds : "N/A"})</div>`;
+    if (d.open_files && d.open_files.length > 0) {
+      html += `<table class="detail-table"><thead><tr><th>FD</th><th>Path</th></tr></thead><tbody>`;
+      d.open_files.forEach(f => {
+        html += `<tr><td>${f.fd}</td><td>${escapeHtml(f.path)}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    } else {
+      html += `<div class="detail-empty">No open files or access denied</div>`;
+    }
+
+    // Network Connections
+    html += `<div class="detail-section-title">🌐 Network Connections</div>`;
+    if (d.connections && d.connections.length > 0) {
+      html += `<table class="detail-table"><thead><tr><th>Proto</th><th>Local</th><th>Remote</th><th>Status</th></tr></thead><tbody>`;
+      d.connections.forEach(c => {
+        html += `<tr><td>${c.type}/${c.family}</td><td>${escapeHtml(c.local)}</td><td>${escapeHtml(c.remote || "—")}</td><td>${c.status}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    } else {
+      html += `<div class="detail-empty">No active network connections</div>`;
+    }
+
+    detailBody.innerHTML = html;
+  }
+
+  // Click on flat table row (but not kill button) → open detail
+  processTbody.addEventListener("click", (e) => {
+    if (e.target.closest(".kill-btn")) return; // don't open detail when clicking kill
+    const tr = e.target.closest("tr");
+    if (!tr) return;
+    const pid = parseInt(tr.dataset.pid, 10);
+    if (pid) openDetailModal(pid);
   });
 
   // ── Controls ─────────────────────────────────────────────

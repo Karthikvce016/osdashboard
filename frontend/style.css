@@ -1162,3 +1162,482 @@ input[type="text"] {
   margin: 16px 0;
   padding: 0 16px;
 }
+
+/* ── Health Score Gauge (header) ────────────────────────────── */
+
+.health-gauge {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.health-ring {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.health-ring-bg {
+  fill: none;
+  stroke: var(--bg-3);
+  stroke-width: 3;
+}
+
+.health-ring-fill {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.8s ease, stroke 0.4s;
+}
+
+.health-ring-fill.warning { stroke: var(--yellow); }
+.health-ring-fill.critical { stroke: var(--red); }
+
+.health-score-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-right: 8px;
+}
+
+.health-grade {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--green);
+  line-height: 1.2;
+  transition: color 0.4s;
+}
+
+.health-grade.warning { color: var(--yellow); }
+.health-grade.critical { color: var(--red); }
+
+.health-sub {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+/* ── Health Breakdown Panel ─────────────────────────────────── */
+
+.health-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.hb-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.hb-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  width: 65px;
+  flex-shrink: 0;
+}
+
+.hb-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hb-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--green);
+  transition: width 0.6s ease, background 0.4s;
+  width: 0%;
+}
+
+.hb-bar-fill.warn { background: var(--yellow); }
+.hb-bar-fill.danger { background: var(--red); }
+
+.hb-val {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Process View Toggle ───────────────────────────────────── */
+
+.process-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  margin-bottom: 12px;
+}
+
+.process-header-row h2 {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.process-view-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+}
+
+.view-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-btn:hover {
+  color: var(--text-primary);
+}
+
+.view-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* ── Process Tree Table ────────────────────────────────────── */
+
+#process-tree-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+#process-tree-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-0);
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+#process-tree-table td {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+#process-tree-table tbody tr {
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+#process-tree-table tbody tr:hover {
+  background: var(--bg-3);
+}
+
+.tree-indent {
+  display: inline-block;
+  color: var(--text-muted);
+  opacity: 0.4;
+  font-size: 12px;
+  user-select: none;
+}
+
+.tree-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tree-connector {
+  color: var(--text-muted);
+  opacity: 0.5;
+  margin-right: 4px;
+  font-size: 13px;
+}
+
+.children-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* ── Process Detail Modal ──────────────────────────────────── */
+
+.detail-modal {
+  max-width: 680px !important;
+  width: 95% !important;
+  text-align: left !important;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.detail-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.detail-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.detail-close-btn {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.detail-close-btn:hover {
+  background: var(--red-bg);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.detail-loading {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.detail-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.detail-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.detail-card-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.detail-table th {
+  background: var(--bg-2);
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.detail-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+/* clickable row for process detail */
+#process-table tbody tr {
+  cursor: pointer;
+}
+
+/* ── Tree View Enhancements ───────────────────────────── */
+
+.tree-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.tree-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tree-toggle-label input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.tree-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+#process-tree-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#process-tree-table tbody tr:hover {
+  background: rgba(88, 166, 255, 0.08);
+}
+
+/* Color-coded tree rows */
+.tree-row-user {
+  border-left: 2px solid var(--accent);
+}
+
+.tree-row-system {
+  border-left: 2px solid transparent;
+  opacity: 0.85;
+}
+
+.tree-name-cell {
+  white-space: nowrap;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.tree-indent {
+  color: rgba(139, 148, 158, 0.4);
+  font-size: 12px;
+  white-space: pre;
+}
+
+.tree-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tree-row-user .tree-name {
+  color: #58a6ff;
+}
+
+/* User badges */
+.user-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.user-badge.user {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+}
+
+.user-badge.system {
+  background: rgba(139, 148, 158, 0.12);
+  color: var(--text-muted);
+}
+
+/* Children badge in tree */
+.children-badge {
+  display: inline-block;
+  min-width: 20px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff;
+}

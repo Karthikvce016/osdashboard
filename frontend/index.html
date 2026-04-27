@@ -8,7 +8,7 @@
   <meta name="description" content="Real-time cross-platform OS performance monitoring dashboard" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=5" />
+  <link rel="stylesheet" href="/static/style.css?v=7" />
 </head>
 
 <body>
@@ -18,6 +18,18 @@
       <h1>⚡ OS Performance Dashboard</h1>
     </div>
     <div class="header-right">
+      <!-- Health Score Gauge -->
+      <div class="health-gauge" id="health-gauge" title="System Health Score">
+        <svg viewBox="0 0 36 36" class="health-ring">
+          <path class="health-ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          <path class="health-ring-fill" id="health-ring-fill" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+        </svg>
+        <span class="health-score-text" id="health-score-text">—</span>
+      </div>
+      <div class="health-label-group">
+        <span class="health-grade" id="health-grade">—</span>
+        <span class="health-sub">Health</span>
+      </div>
       <span id="status-badge" class="badge badge-normal">Normal</span>
       <span id="connection-indicator" class="connection offline" title="WebSocket status">●</span>
     </div>
@@ -198,10 +210,30 @@
       </div>
     </section>
 
+    <!-- ───── Health Score Breakdown Panel ───── -->
+    <section id="health-panel" class="panel">
+      <h2>System Health Breakdown</h2>
+      <div class="health-breakdown-grid" id="health-breakdown">
+        <div class="hb-item"><span class="hb-label">CPU</span><div class="hb-bar-track"><div class="hb-bar-fill" id="hb-cpu"></div></div><span class="hb-val" id="hb-cpu-val">0</span></div>
+        <div class="hb-item"><span class="hb-label">Memory</span><div class="hb-bar-track"><div class="hb-bar-fill" id="hb-memory"></div></div><span class="hb-val" id="hb-memory-val">0</span></div>
+        <div class="hb-item"><span class="hb-label">Swap</span><div class="hb-bar-track"><div class="hb-bar-fill" id="hb-swap"></div></div><span class="hb-val" id="hb-swap-val">0</span></div>
+        <div class="hb-item"><span class="hb-label">D-State</span><div class="hb-bar-track"><div class="hb-bar-fill" id="hb-dstate"></div></div><span class="hb-val" id="hb-dstate-val">0</span></div>
+        <div class="hb-item"><span class="hb-label">Load</span><div class="hb-bar-track"><div class="hb-bar-fill" id="hb-load"></div></div><span class="hb-val" id="hb-load-val">0</span></div>
+        <div class="hb-item"><span class="hb-label">Zombie</span><div class="hb-bar-track"><div class="hb-bar-fill" id="hb-zombie"></div></div><span class="hb-val" id="hb-zombie-val">0</span></div>
+      </div>
+    </section>
+
     <!-- ───── Process Table ───── -->
     <section id="process-section" class="seamless-section">
-      <h2>Process Table</h2>
-      <div class="table-wrapper">
+      <div class="process-header-row">
+        <h2>Process Table</h2>
+        <div class="process-view-toggle">
+          <button id="view-flat-btn" class="view-btn active" title="Flat view">☰ List</button>
+          <button id="view-tree-btn" class="view-btn" title="Tree view (fork hierarchy)">🌳 Tree</button>
+        </div>
+      </div>
+      <!-- Flat table view -->
+      <div id="flat-view" class="table-wrapper">
         <table id="process-table">
           <thead>
             <tr>
@@ -217,6 +249,30 @@
             </tr>
           </thead>
           <tbody id="process-tbody"></tbody>
+        </table>
+      </div>
+      <!-- Tree view -->
+      <div id="tree-view" class="table-wrapper hidden">
+        <div class="tree-controls">
+          <label class="tree-toggle-label">
+            <input type="checkbox" id="tree-show-all"> Show all system processes
+          </label>
+          <span id="tree-count" class="tree-count"></span>
+        </div>
+        <table id="process-tree-table">
+          <thead>
+            <tr>
+              <th>PID</th>
+              <th>Process (hierarchy)</th>
+              <th>User</th>
+              <th>CPU %</th>
+              <th>Mem %</th>
+              <th>State</th>
+              <th>Threads</th>
+              <th>Children</th>
+            </tr>
+          </thead>
+          <tbody id="tree-tbody"></tbody>
         </table>
       </div>
     </section>
@@ -274,7 +330,7 @@
       <div id="dstate-list" class="dstate-list">—</div>
     </section>
 
-  <!-- ───── Kill Confirmation Modal (outside main so it never renders inline) ───── -->
+  <!-- ───── Kill Confirmation Modal ───── -->
   <div id="kill-modal-overlay" class="modal-overlay hidden" style="display:none">
     <div class="modal" id="kill-modal">
       <div class="modal-icon" id="modal-icon">⚠️</div>
@@ -291,9 +347,22 @@
     </div>
   </div>
 
+  <!-- ───── Process Detail Modal ───── -->
+  <div id="detail-modal-overlay" class="modal-overlay hidden" style="display:none">
+    <div class="modal detail-modal" id="detail-modal">
+      <div class="detail-modal-header">
+        <h3 id="detail-title">Process Detail</h3>
+        <button id="detail-close" class="detail-close-btn">✕</button>
+      </div>
+      <div class="detail-modal-body" id="detail-body">
+        <div class="detail-loading">Loading process info…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=10"></script>
 </body>
 
 </html>

@@ -463,3 +463,317 @@ def get_process_list() -> List[Dict]:
     _process_cache = procs
     _last_process_scan = now
     return procs
+
+
+# ---------------------------------------------------------------------------
+# Process Tree — parent-child hierarchy (fork/exec visualisation)
+# ---------------------------------------------------------------------------
+
+
+def get_process_tree(compact: bool = True) -> List[Dict]:
+    """
+    Build a flat list of processes with parent-child (PPID) links and depth.
+
+    OS Concept: Every process is created via fork(). The resulting tree
+    starts at PID 1 (init/launchd/systemd) and branches out.  This
+    one-pass algorithm avoids recursion: it builds a children dict keyed
+    by PID, then walks root → leaves assigning depth.
+
+    compact mode (default ON): Hides childless system-owned processes that
+    are idle (CPU < 0.1, Memory < 0.1). This dramatically reduces noise
+    on macOS where launchd spawns 400+ idle daemon children.
+
+    Returns a list of dicts sorted by tree order (DFS), each containing:
+      pid, ppid, name, cpu, memory, status, threads, depth, username, is_user
+    """
+    procs_by_pid: Dict[int, Dict] = {}
+    children_map: Dict[int, List[int]] = {}
+
+    for proc in psutil.process_iter(["pid", "ppid", "name", "cpu_percent",
+                                      "memory_percent", "status", "num_threads",
+                                      "username"]):
+        try:
+            info = proc.info
+            pid = info["pid"]
+            ppid = info.get("ppid", 0) or 0
+            username = info.get("username", "") or ""
+            # On macOS, user processes run under the logged-in user
+            is_user = username not in ("root", "_windowserver", "_hidd",
+                                        "_spotlight", "_coreaudiod", "")
+            procs_by_pid[pid] = {
+                "pid": pid,
+                "ppid": ppid,
+                "name": info["name"] or "Unknown",
+                "cpu": round(info.get("cpu_percent") or 0.0, 1),
+                "memory": round(info.get("memory_percent") or 0.0, 1),
+                "status": info.get("status", "?"),
+                "threads": info.get("num_threads", 0),
+                "depth": 0,
+                "children_count": 0,
+                "username": username,
+                "is_user": is_user,
+            }
+            children_map.setdefault(ppid, []).append(pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+
+    # ── Compact mode: prune idle system leaf nodes ──
+    if compact:
+        keep_pids = set()
+        for pid, p in procs_by_pid.items():
+            has_kids = len(children_map.get(pid, [])) > 0
+            is_interesting = (
+                has_kids
+                or p["is_user"]
+                or p["cpu"] >= 0.1
+                or p["memory"] >= 0.1
+                or p["status"] in ("zombie", "disk-sleep")
+                or pid <= 1
+            )
+            if is_interesting:
+                keep_pids.add(pid)
+                # Walk up ancestors to keep the tree connected
+                ancestor = p["ppid"]
+                while ancestor in procs_by_pid and ancestor not in keep_pids:
+                    keep_pids.add(ancestor)
+                    ancestor = procs_by_pid[ancestor]["ppid"]
+
+        # Rebuild children_map with only kept PIDs
+        filtered_children: Dict[int, List[int]] = {}
+        for pid in keep_pids:
+            ppid = procs_by_pid[pid]["ppid"]
+            if ppid in keep_pids:
+                filtered_children.setdefault(ppid, []).append(pid)
+        children_map = filtered_children
+        active_pids = keep_pids
+    else:
+        active_pids = set(procs_by_pid.keys())
+
+    # Find roots — PIDs whose parent is not in active set OR parent is self
+    roots = [pid for pid in active_pids
+             if procs_by_pid[pid]["ppid"] not in active_pids
+             or procs_by_pid[pid]["ppid"] == pid]
+
+    # DFS to assign depth and produce tree-ordered list
+    result: List[Dict] = []
+    stack = [(pid, 0) for pid in sorted(roots, reverse=True)]
+    visited: set = set()
+
+    while stack:
+        pid, depth = stack.pop()
+        if pid in visited or pid not in procs_by_pid:
+            continue
+        visited.add(pid)
+        if compact and pid not in keep_pids:
+            continue
+        node = procs_by_pid[pid]
+        node["depth"] = depth
+        kids = children_map.get(pid, [])
+        node["children_count"] = len(kids)
+        result.append(node)
+
+        # Sort: processes with children first, then by PID ascending
+        kids_sorted = sorted(kids, key=lambda c: (-len(children_map.get(c, [])), c))
+        for child_pid in reversed(kids_sorted):
+            if child_pid != pid:
+                stack.append((child_pid, depth + 1))
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Process Detail — deep dive into a single PID (viva-ready)
+# ---------------------------------------------------------------------------
+
+
+def get_process_detail(pid: int) -> Optional[Dict]:
+    """
+    Return detailed OS-level information for a single process.
+
+    OS Concepts covered:
+    - Page faults (minor = in-memory, major = required disk I/O)
+    - Open file descriptors (Unix "everything is a file")
+    - Network connections (sockets as file descriptors)
+    - Context switches (voluntary = I/O wait, involuntary = preempted)
+    - Memory maps (virtual address space regions)
+    - CPU affinity (which cores the scheduler can assign)
+    - Nice value (process priority / scheduling)
+    """
+    try:
+        proc = psutil.Process(pid)
+        info = proc.as_dict(attrs=[
+            "pid", "name", "ppid", "username", "status",
+            "cpu_percent", "memory_percent", "memory_info",
+            "num_threads", "nice", "create_time",
+        ])
+
+        # Page faults (memory_info contains pfaults on macOS, others on Linux)
+        mem_info = info.get("memory_info")
+        page_faults = {
+            "rss": mem_info.rss if mem_info else 0,
+            "vms": mem_info.vms if mem_info else 0,
+        }
+        # macOS has pfaults; Linux has no direct per-process page fault in memory_info
+        if mem_info and hasattr(mem_info, "pfaults"):
+            page_faults["total_faults"] = mem_info.pfaults
+        if mem_info and hasattr(mem_info, "pageins"):
+            page_faults["major_faults"] = mem_info.pageins  # required disk read
+
+        # Context switches
+        try:
+            ctx = proc.num_ctx_switches()
+            ctx_switches = {"voluntary": ctx.voluntary, "involuntary": ctx.involuntary}
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            ctx_switches = {"voluntary": 0, "involuntary": 0}
+
+        # Open files
+        try:
+            open_files = [{"path": f.path, "fd": f.fd}
+                          for f in proc.open_files()[:20]]  # cap at 20
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            open_files = []
+
+        # Network connections (sockets)
+        try:
+            connections = []
+            for c in proc.connections(kind="inet")[:15]:
+                connections.append({
+                    "fd": c.fd,
+                    "family": "IPv4" if c.family.name == "AF_INET" else "IPv6",
+                    "type": "TCP" if c.type.name == "SOCK_STREAM" else "UDP",
+                    "local": f"{c.laddr.ip}:{c.laddr.port}" if c.laddr else "",
+                    "remote": f"{c.raddr.ip}:{c.raddr.port}" if c.raddr else "",
+                    "status": c.status,
+                })
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            connections = []
+
+        # File descriptor count
+        try:
+            num_fds = proc.num_fds()
+        except (AttributeError, psutil.AccessDenied, psutil.NoSuchProcess):
+            num_fds = -1
+
+        # Threads list
+        try:
+            threads = [{"id": t.id, "user_time": round(t.user_time, 3),
+                         "system_time": round(t.system_time, 3)}
+                       for t in proc.threads()[:30]]
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            threads = []
+
+        # CPU affinity (not available on macOS)
+        try:
+            affinity = proc.cpu_affinity()
+        except (AttributeError, psutil.AccessDenied, psutil.NoSuchProcess):
+            affinity = None
+
+        return {
+            "pid": info["pid"],
+            "name": info["name"],
+            "ppid": info.get("ppid", 0),
+            "username": info.get("username", "?"),
+            "status": info.get("status", "?"),
+            "cpu": round(info.get("cpu_percent") or 0.0, 1),
+            "memory": round(info.get("memory_percent") or 0.0, 1),
+            "nice": info.get("nice"),
+            "num_threads": info.get("num_threads", 0),
+            "num_fds": num_fds,
+            "create_time": info.get("create_time", 0),
+            "page_faults": page_faults,
+            "ctx_switches": ctx_switches,
+            "open_files": open_files,
+            "connections": connections,
+            "threads": threads,
+            "cpu_affinity": affinity,
+        }
+    except psutil.NoSuchProcess:
+        return None
+    except psutil.AccessDenied:
+        return {"error": f"Access denied for PID {pid}"}
+
+
+# ---------------------------------------------------------------------------
+# Health Score — weighted composite metric (0–100)
+# ---------------------------------------------------------------------------
+
+
+def compute_health_score(cpu: float, mem_pressure: float,
+                         swap_in_rate: float, swap_out_rate: float,
+                         d_state_count: int, load_one: float,
+                         zombie_count: int) -> Dict:
+    """
+    Compute a composite system health score (100 = perfect, 0 = critical).
+
+    Weights:
+      CPU usage       → 25%
+      Memory pressure → 25%
+      Swap activity   → 15%  (page fault rate proxy)
+      D-state procs   → 15%  (deadlock / I/O block proxy)
+      Load average    → 10%  (relative to core count)
+      Zombie procs    → 10%  (process lifecycle issues)
+
+    Thresholds are tuneable — lower them during demos to trigger
+    WARNING/CRITICAL states on a quiet laptop.
+    """
+    cores = psutil.cpu_count(logical=True) or 1
+
+    # Allow some background CPU jitter (up to 15%) without penalty
+    cpu_penalty = min(max(0, cpu - 15) * (100 / 85), 100)
+    
+    # Modern OSs cache heavily, so 50-60% memory usage is normal idle.
+    # We only start penalizing memory above 60%
+    mem_penalty = min(max(0, mem_pressure - 60) * (100 / 40), 100)
+
+    # Swap: >500 pages/sec = fully bad (tune to 50 for demos)
+    swap_rate = swap_in_rate + swap_out_rate
+    swap_penalty = min(swap_rate / 500 * 100, 100)
+
+    # D-state: each process stuck = 25 penalty points
+    dstate_penalty = min(d_state_count * 25, 100)
+
+    # Load: ratio to core count; > 2x = fully bad
+    load_ratio = load_one / cores if cores > 0 else 0
+    load_penalty = min(load_ratio / 2.0 * 100, 100)
+
+    # Zombie: each zombie = 10 penalty points
+    zombie_penalty = min(zombie_count * 10, 100)
+
+    weighted = (
+        cpu_penalty * 0.25 +
+        mem_penalty * 0.25 +
+        swap_penalty * 0.15 +
+        dstate_penalty * 0.15 +
+        load_penalty * 0.10 +
+        zombie_penalty * 0.10
+    )
+
+    score = max(0, round(100 - weighted, 1))
+
+    # Classification
+    if score >= 80:
+        grade = "Healthy"
+        level = "normal"
+    elif score >= 60:
+        grade = "Warning"
+        level = "warning"
+    elif score >= 40:
+        grade = "Stressed"
+        level = "warning"
+    else:
+        grade = "Critical"
+        level = "critical"
+
+    return {
+        "score": score,
+        "grade": grade,
+        "level": level,
+        "breakdown": {
+            "cpu": round(cpu_penalty, 1),
+            "memory": round(mem_penalty, 1),
+            "swap": round(swap_penalty, 1),
+            "dstate": round(dstate_penalty, 1),
+            "load": round(load_penalty, 1),
+            "zombie": round(zombie_penalty, 1),
+        },
+    }
